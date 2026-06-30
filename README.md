@@ -184,3 +184,43 @@ docker compose logs airflow-dag-processor --tail=50
 
 **Port 8082 tidak bisa diakses di Codespace**  
 Pastikan visibility port di-set ke **Public**: klik kanan port `8082` di tab Ports → **Port Visibility** → **Public**.
+
+---
+
+## GitHub Codespaces — Free Quota & Tips Hemat
+
+### Cek Sisa Quota
+
+Buka: [https://github.com/settings/billing/summary](https://github.com/settings/billing/summary)
+
+Di bagian **Codespaces** akan terlihat compute hours dan storage yang sudah terpakai bulan ini.
+
+### Free Quota per Bulan
+
+| Akun | Compute | Storage |
+|---|---|---|
+| Free | 120 core-hours | 15 GB |
+| Pro | 180 core-hours | 20 GB |
+
+**Catatan core-hours** — tergantung machine type:
+- 2-core machine → 120 core-hours = **60 jam aktif**
+- 4-core machine → 120 core-hours = **30 jam aktif**
+
+Gunakan **2-core machine** untuk hemat quota (cukup untuk hands-on ini).
+
+### Tips Hemat Quota
+
+> ⚠️ Jangan hanya tutup browser — Codespace tetap berjalan dan memakan quota.
+
+**Stop Codespace saat tidak dipakai:**
+1. Buka [https://github.com/codespaces](https://github.com/codespaces)
+2. Klik `...` di Codespace yang aktif
+3. Pilih **Stop codespace**
+
+Atau dari dalam Codespace: tekan `Ctrl+Shift+P` → ketik `Stop Current Codespace` → Enter.
+
+Codespace otomatis stop setelah **30 menit idle**, tapi lebih baik stop manual untuk memastikan.
+
+**Hapus Codespace yang sudah tidak dipakai** untuk bebaskan storage quota:
+1. Buka [https://github.com/codespaces](https://github.com/codespaces)
+2. Klik `...` → **Delete**
