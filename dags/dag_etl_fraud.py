@@ -1,12 +1,12 @@
 """
-dag_etl_bank_transactions.py
+dag_etl_fraud.py
 ===================================
-ETL pipeline: transactions.csv → stg_bank_transactions → dim_bank_transactions
+ETL pipeline: fraud_labels.csv → stg_fraud_labels → dim_fraud_labels
 
 Task flow:
-    create_tables  (SQLExecuteQueryOperator) : DDL stg & dim bank_transactions
-    extract_load   (@task Python)            : baca CSV → stg_bank_transactions
-    transform      (SQLExecuteQueryOperator) : stg_bank_transactions → dim_bank_transactions
+    create_tables  (SQLExecuteQueryOperator) : DDL stg & dim fraud_labels
+    extract_load   (@task Python)            : baca CSV → stg_fraud_labels
+    transform      (SQLExecuteQueryOperator) : stg_fraud_labels → dim_fraud_labels
 
 Airflow Connection:
     conn_id = "postgres_etl"  (tipe: Postgres)
@@ -24,55 +24,37 @@ from airflow.providers.common.sql.operators.sql import SQLExecuteQueryOperator
 # ─── Konstanta ────────────────────────────────────────────────────────────────
 CONN_ID     = "postgres_etl"
 SOURCE_FILE = os.path.join(
-    os.path.dirname(__file__), "..", "include", "dataset", "transactions.csv"
+    os.path.dirname(__file__), "..", "include", "dataset", "fraud_labels.csv"
 )
 
 DDL_STATEMENTS = """
-CREATE TABLE IF NOT EXISTS stg_bank_transactions (
+CREATE TABLE IF NOT EXISTS stg_fraud_labels (
     transaction_id   INTEGER,
     transaction_code VARCHAR(50),
-    account_id       INTEGER,
-    customer_id      INTEGER,
-    branch_id        INTEGER,
-    channel_id       INTEGER,
-    transaction_date VARCHAR(20),
-    transaction_at   VARCHAR(30),
-    transaction_type VARCHAR(50),
-    amount           NUMERIC(18,2),
-    balance_before   NUMERIC(18,2),
-    balance_after    NUMERIC(18,2),
-    status           VARCHAR(20),
-    reference_no     VARCHAR(100)
+    is_fraud         VARCHAR(10),
+    fraud_type       VARCHAR(50),
+    fraud_score      VARCHAR(20),
+    flagged_at       VARCHAR(30)
 );
 
-CREATE TABLE IF NOT EXISTS fact_transactions (
-    transaction_id        INTEGER PRIMARY KEY,
-    transaction_code      VARCHAR(50),
-    account_id            INTEGER,
-    customer_id           INTEGER,
-    branch_id             INTEGER,
-    channel_id            INTEGER,
-    transaction_date      DATE,
-    transaction_at        TIMESTAMP,
-    transaction_type      VARCHAR(50),
-    amount                NUMERIC(18,2),
-    balance_before        NUMERIC(18,2),
-    balance_after         NUMERIC(18,2),
-    status                VARCHAR(20),
-    reference_no          VARCHAR(100),
+CREATE TABLE IF NOT EXISTS dim_fraud_labels (
+    transaction_id   INTEGER PRIMARY KEY,
+    transaction_code VARCHAR(50),
+    is_fraud         BOOLEAN,
+    fraud_type       VARCHAR(50),
+    fraud_score      NUMERIC(5,4),
+    flagged_at       TIMESTAMP,
     -- derived columns
-    transaction_hour      SMALLINT,
-    is_high_value_trx     BOOLEAN,
-    is_balance_consistent BOOLEAN,
-    etl_loaded_at         TIMESTAMP DEFAULT NOW()
+    fraud_risk_level VARCHAR(20),
+    etl_loaded_at    TIMESTAMP DEFAULT NOW()
 );
 """
 
 
 # ─── DAG ──────────────────────────────────────────────────────────────────────
 @dag(
-    dag_id              = "dag_etl_bank_transactions",
-    description         = "ETL pipeline untuk data transaksi perbankan",
+    dag_id              = "dag_etl_fraud",
+    description         = "ETL pipeline untuk label indikasi fraud (fraud_labels)",
     default_args        = {
         "owner"           : "airflow",
         "retries"         : 1,
@@ -82,10 +64,10 @@ CREATE TABLE IF NOT EXISTS fact_transactions (
     start_date          = datetime(2025, 1, 1),
     schedule            = None,
     catchup             = False,
-    tags                = ["etl", "transactions", "bank", "postgresql"],
-    template_searchpath = ["/opt/airflow/include/sql/transactions"],
+    tags                = ["etl", "fraud", "security", "postgresql"],
+    template_searchpath = ["/opt/airflow/include/sql/fraud"],
 )
-def dag_etl_bank_transactions():
+def dag_etl_fraud():
 
     # ── Task 1: DDL ───────────────────────────────────────────────────────────
     create_tables = SQLExecuteQueryOperator(
@@ -94,7 +76,7 @@ def dag_etl_bank_transactions():
         sql     = DDL_STATEMENTS,
     )
 
-    # ── Task 2: Extract CSV → stg_bank_transactions ──────────────────────────
+    # ── Task 2: Extract CSV → stg_fraud_labels ───────────────────────────────
     @task()
     def extract_load():
         from airflow.hooks.base import BaseHook
@@ -106,14 +88,15 @@ def dag_etl_bank_transactions():
         )
         engine = create_engine(conn_str)
 
-        df = pd.read_csv(SOURCE_FILE)
+        # Menggunakan keep_default_na=False agar baris fraud_type/score yang kosong tidak diubah jadi NaN
+        df = pd.read_csv(SOURCE_FILE, keep_default_na=False)
 
         with engine.connect() as c:
-            c.execute(text("TRUNCATE TABLE stg_bank_transactions"))
+            c.execute(text("TRUNCATE TABLE stg_fraud_labels"))
             c.commit()
 
         df.to_sql(
-            name      = "stg_bank_transactions",
+            name      = "stg_fraud_labels",
             con       = engine,
             if_exists = "append",
             index     = False,
@@ -123,7 +106,7 @@ def dag_etl_bank_transactions():
         engine.dispose()
         return len(df)
 
-    # ── Task 3: Transform stg_bank_transactions → dim_bank_transactions ──────
+    # ── Task 3: Transform stg_fraud_labels → dim_fraud_labels ────────────────
     transform = SQLExecuteQueryOperator(
         task_id = "transform",
         conn_id = CONN_ID,
@@ -134,4 +117,4 @@ def dag_etl_bank_transactions():
     create_tables >> extract_load() >> transform
 
 
-dag_etl_bank_transactions()
+dag_etl_fraud()

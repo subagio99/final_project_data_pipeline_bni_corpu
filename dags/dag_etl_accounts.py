@@ -1,12 +1,12 @@
 """
-dag_etl_bank_transactions.py
+dag_etl_accounts.py
 ===================================
-ETL pipeline: transactions.csv → stg_bank_transactions → dim_bank_transactions
+ETL pipeline: accounts.csv → stg_accounts → dim_accounts
 
 Task flow:
-    create_tables  (SQLExecuteQueryOperator) : DDL stg & dim bank_transactions
-    extract_load   (@task Python)            : baca CSV → stg_bank_transactions
-    transform      (SQLExecuteQueryOperator) : stg_bank_transactions → dim_bank_transactions
+    create_tables  (SQLExecuteQueryOperator) : DDL stg & dim accounts
+    extract_load   (@task Python)            : baca CSV → stg_accounts
+    transform      (SQLExecuteQueryOperator) : stg_accounts → dim_accounts
 
 Airflow Connection:
     conn_id = "postgres_etl"  (tipe: Postgres)
@@ -24,55 +24,48 @@ from airflow.providers.common.sql.operators.sql import SQLExecuteQueryOperator
 # ─── Konstanta ────────────────────────────────────────────────────────────────
 CONN_ID     = "postgres_etl"
 SOURCE_FILE = os.path.join(
-    os.path.dirname(__file__), "..", "include", "dataset", "transactions.csv"
+    os.path.dirname(__file__), "..", "include", "dataset", "accounts.csv"
 )
 
 DDL_STATEMENTS = """
-CREATE TABLE IF NOT EXISTS stg_bank_transactions (
-    transaction_id   INTEGER,
-    transaction_code VARCHAR(50),
-    account_id       INTEGER,
-    customer_id      INTEGER,
-    branch_id        INTEGER,
-    channel_id       INTEGER,
-    transaction_date VARCHAR(20),
-    transaction_at   VARCHAR(30),
-    transaction_type VARCHAR(50),
-    amount           NUMERIC(18,2),
-    balance_before   NUMERIC(18,2),
-    balance_after    NUMERIC(18,2),
-    status           VARCHAR(20),
-    reference_no     VARCHAR(100)
+CREATE TABLE IF NOT EXISTS stg_accounts (
+    account_id    INTEGER,
+    account_no    VARCHAR(30),
+    account_type  VARCHAR(50),
+    product_name  VARCHAR(100),
+    currency      VARCHAR(10),
+    open_date     VARCHAR(20),
+    close_date    VARCHAR(20),
+    status        VARCHAR(20),
+    interest_rate NUMERIC(5,2),
+    customer_id   INTEGER,
+    branch_id     INTEGER
 );
 
-CREATE TABLE IF NOT EXISTS fact_transactions (
-    transaction_id        INTEGER PRIMARY KEY,
-    transaction_code      VARCHAR(50),
-    account_id            INTEGER,
-    customer_id           INTEGER,
-    branch_id             INTEGER,
-    channel_id            INTEGER,
-    transaction_date      DATE,
-    transaction_at        TIMESTAMP,
-    transaction_type      VARCHAR(50),
-    amount                NUMERIC(18,2),
-    balance_before        NUMERIC(18,2),
-    balance_after         NUMERIC(18,2),
-    status                VARCHAR(20),
-    reference_no          VARCHAR(100),
+CREATE TABLE IF NOT EXISTS dim_accounts (
+    account_id        INTEGER PRIMARY KEY,
+    account_no        VARCHAR(30),
+    account_type      VARCHAR(50),
+    product_name      VARCHAR(100),
+    currency          VARCHAR(10),
+    open_date         DATE,
+    close_date        DATE,
+    status            VARCHAR(20),
+    interest_rate     NUMERIC(5,2),
+    customer_id       INTEGER,
+    branch_id         INTEGER,
     -- derived columns
-    transaction_hour      SMALLINT,
-    is_high_value_trx     BOOLEAN,
-    is_balance_consistent BOOLEAN,
-    etl_loaded_at         TIMESTAMP DEFAULT NOW()
+    account_age_years SMALLINT,
+    interest_segment  VARCHAR(30),
+    etl_loaded_at     TIMESTAMP DEFAULT NOW()
 );
 """
 
 
 # ─── DAG ──────────────────────────────────────────────────────────────────────
 @dag(
-    dag_id              = "dag_etl_bank_transactions",
-    description         = "ETL pipeline untuk data transaksi perbankan",
+    dag_id              = "dag_etl_accounts",
+    description         = "ETL pipeline untuk data rekening nasabah (accounts)",
     default_args        = {
         "owner"           : "airflow",
         "retries"         : 1,
@@ -82,10 +75,10 @@ CREATE TABLE IF NOT EXISTS fact_transactions (
     start_date          = datetime(2025, 1, 1),
     schedule            = None,
     catchup             = False,
-    tags                = ["etl", "transactions", "bank", "postgresql"],
-    template_searchpath = ["/opt/airflow/include/sql/transactions"],
+    tags                = ["etl", "accounts", "bank", "postgresql"],
+    template_searchpath = ["/opt/airflow/include/sql/accounts"],
 )
-def dag_etl_bank_transactions():
+def dag_etl_accounts():
 
     # ── Task 1: DDL ───────────────────────────────────────────────────────────
     create_tables = SQLExecuteQueryOperator(
@@ -94,7 +87,7 @@ def dag_etl_bank_transactions():
         sql     = DDL_STATEMENTS,
     )
 
-    # ── Task 2: Extract CSV → stg_bank_transactions ──────────────────────────
+    # ── Task 2: Extract CSV → stg_accounts ───────────────────────────────────
     @task()
     def extract_load():
         from airflow.hooks.base import BaseHook
@@ -106,14 +99,15 @@ def dag_etl_bank_transactions():
         )
         engine = create_engine(conn_str)
 
-        df = pd.read_csv(SOURCE_FILE)
+        # Menggunakan keep_default_na=False agar nilai close_date yang kosong tidak dibaca sebagai NaN oleh pandas
+        df = pd.read_csv(SOURCE_FILE, keep_default_na=False)
 
         with engine.connect() as c:
-            c.execute(text("TRUNCATE TABLE stg_bank_transactions"))
+            c.execute(text("TRUNCATE TABLE stg_accounts"))
             c.commit()
 
         df.to_sql(
-            name      = "stg_bank_transactions",
+            name      = "stg_accounts",
             con       = engine,
             if_exists = "append",
             index     = False,
@@ -123,7 +117,7 @@ def dag_etl_bank_transactions():
         engine.dispose()
         return len(df)
 
-    # ── Task 3: Transform stg_bank_transactions → dim_bank_transactions ──────
+    # ── Task 3: Transform stg_accounts → dim_accounts ────────────────────────
     transform = SQLExecuteQueryOperator(
         task_id = "transform",
         conn_id = CONN_ID,
@@ -134,4 +128,4 @@ def dag_etl_bank_transactions():
     create_tables >> extract_load() >> transform
 
 
-dag_etl_bank_transactions()
+dag_etl_accounts()
