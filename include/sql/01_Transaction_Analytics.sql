@@ -1,34 +1,20 @@
--- Analisis Tren Transaksi Harian, Mingguan, dan Bulanan
-WITH monthly_trend AS (
-    SELECT 
-        d.year,
-        d.month,
-        d.month_name,
-        COUNT(f.transaction_id) AS total_volume,
-        SUM(f.amount) AS total_amount,
-        -- Menghitung pertumbuhan dari bulan sebelumnya (MoM Growth)
-        LAG(SUM(f.amount)) OVER (ORDER BY d.year, d.month) AS prev_month_amount
-    FROM fact_transactions f
-    JOIN dim_date d ON f.transaction_date = d.full_date
-    GROUP BY d.year, d.month, d.month_name
-)
-SELECT 
-    year,
-    month_name,
-    total_volume,
+SELECT
+    period_type,
+    period_start_date,
+    total_transactions,
     total_amount,
-    ROUND(((total_amount - prev_month_amount) / prev_month_amount) * 100, 2) AS mom_growth_percentage
-FROM monthly_trend
-ORDER BY year, month;
-
--- Untuk breakdown per Minggu & Hari
-SELECT 
-    d.year,
-    d.week_of_year AS week,
-    d.day_name,
-    COUNT(f.transaction_id) AS daily_volume,
-    SUM(f.amount) AS daily_amount
-FROM fact_transactions f
-JOIN dim_date d ON f.transaction_date = d.full_date
-GROUP BY d.year, d.week_of_year, d.day_of_week, d.day_name
-ORDER BY d.year, d.week_of_year, d.day_of_week;
+    avg_transaction_amount,
+    success_transactions,
+    failed_transactions,
+    pending_transactions,
+    previous_total_amount,
+    growth_amount_pct
+FROM mart_transaction_analytics
+ORDER BY
+    CASE
+        WHEN period_type = 'DAY' THEN 1
+        WHEN period_type = 'WEEK' THEN 2
+        WHEN period_type = 'MONTH' THEN 3
+        ELSE 4
+    END,
+    period_start_date;
